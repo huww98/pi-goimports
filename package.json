@@ -1,6 +1,6 @@
 {
   "name": "pi-goimports",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "pi extension — run goimports on write/edit of *.go files and inject the diff into the tool result",
   "keywords": [
     "pi-package"
