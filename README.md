@@ -31,15 +31,16 @@ to (de)activate.
 ## Install
 
 ```bash
-# latest on default branch
+pi install npm:pi-goimports
+# or pin a version
+pi install npm:pi-goimports@0.1.1
+
+# alternative — from git
 pi install git:github.com/huww98/pi-goimports
-# or pin a tag
-pi install git:github.com/huww98/pi-goimports@v0.1.0
-# raw URL also works
-pi install https://github.com/huww98/pi-goimports
+pi install git:github.com/huww98/pi-goimports@v0.1.1
 ```
 
-To try without installing: `pi -e git:github.com/huww98/pi-goimports`.
+To try without installing: `pi -e npm:pi-goimports`.
 
 ## Configuration
 
