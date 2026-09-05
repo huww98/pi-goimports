@@ -12,8 +12,9 @@ goimports manage resolvable imports.
 - **`before_agent_start`** — appends a constant rule to the system prompt once
   per agent run (cache-safe): write the body first, let goimports add the
   imports it can resolve, only add non-resolvable imports manually after
-  goimports has run. Also notes that edits via the `bash` tool are not
-  processed automatically.
+  goimports has run. Also tells the model how to recover from a stale module
+  cache index (run `gomodindex`), and notes that edits via the `bash` tool are
+  not processed automatically.
 - **`tool_result`** for `write`/`edit` on `*.go` — runs `goimports -d -w`
   (prints the diff to stdout and applies it in one call) and appends the diff
   to the tool result. No-op when goimports changes nothing.
@@ -55,6 +56,11 @@ To try without installing: `pi -e npm:pi-goimports`.
   `package x`).
 - `diff` on PATH (goimports `-d` shells out to `diff` for the diff output;
   always present on macOS/Linux).
+- Optional: `gomodindex` (`go install golang.org/x/tools/internal/modindex/gomodindex@latest`).
+  goimports v0.48.0+ resolves module-cache candidates from the index
+  that gopls maintains in `os.UserCacheDir()/goimports`, and never refreshes it itself.
+  `gomodindex` rebuilds it after a `go get` (see [golang/go#80087](https://github.com/golang/go/issues/80087)).
+  Without an index goimports still works, by scanning `GOMODCACHE` (seconds, not milliseconds).
 
 ## Development
 

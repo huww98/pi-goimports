@@ -42,7 +42,10 @@ The diff is appended to the tool result so you can see what changed.
 Write the code body first; let goimports add the imports it can resolve.
 Do not add import lines before writing the code that uses them.
 Some imports are not auto-resolvable (ambiguous package names, vendored paths, modules absent from go.mod).
-Add those manually only after goimports has run and left them out.
+If an import you expect is missing, the module cache index may be stale (typical right after \`go get\`):
+run \`gomodindex && goimports -w <file>\`
+(install once: \`go install golang.org/x/tools/internal/modindex/gomodindex@latest\`).
+Otherwise add the import manually.
 
 Edits made through the \`bash\` tool are not processed automatically.
 If you modify a *.go file via bash, run \`goimports -w <file>\` yourself.
