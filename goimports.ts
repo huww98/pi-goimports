@@ -3,9 +3,11 @@
  *
  * - Appends a standing rule to the system prompt once per agent run: the model
  *   should write the code body first and let goimports manage resolvable imports.
- * - After every write/edit to a *.go file, runs `goimports -d -w` (prints the
- *   diff to stdout and applies it in one call) and appends the diff to the tool
- *   result so the next turn sees the actual import/format changes.
+ * - After every write/edit to a *.go file, runs `goimports`, writes the
+ *   formatted result back, and appends a standard unified diff to the tool
+ *   result so the next turn sees the actual import/format changes; a transcript
+ *   entry renders the same changes colored via pi's renderDiff (which uses a
+ *   line-numbered display diff).
  *
  * Binary lookup (cached per session): a bare execFile probe on PATH confirms
  * goimports is on PATH AND actually runs; if that fails, the `go env GOBIN`/
@@ -15,17 +17,22 @@
  * notifies with install steps.
  *
  * Env:
- *   PI_GOIMPORTS_ARGS - extra args appended to `goimports -d -w`
+ *   PI_GOIMPORTS_ARGS - extra args appended to the `goimports` invocation
  *                       (e.g. "-local github.com/myorg")
  */
 
 import { execFile } from "node:child_process";
+import { readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
 
 import {
+  generateDiffString,
+  generateUnifiedPatch,
   isEditToolResult,
   isWriteToolResult,
+  renderDiff,
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
@@ -67,20 +74,22 @@ function errMsg(e: unknown): string {
   return (err.stderr ?? "").trim() || err.message || String(e);
 }
 
-// One-line summary of a unified diff: counts added/removed lines (excluding
-// file headers and hunk markers). goimports -d output is a single-file unified
-// diff, so this reflects net changes to that file.
-function summarizeDiff(diff: string): string {
+// One-line summary of a line-numbered diff: counts added/removed lines.
+function summarizeDiff(diff: string, file: string): string {
   let added = 0;
   let removed = 0;
   for (const line of diff.split("\n")) {
-    if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@")) {
-      continue;
-    }
     if (line.startsWith("+")) added++;
     else if (line.startsWith("-")) removed++;
   }
-  return `goimports +${added} -${removed}`;
+  return `goimports ${file} +${added} -${removed}`;
+}
+
+// Mirror pi's renderToolPath text shortening: collapse the home directory to ~
+// so the path matches what the write/edit tool-call header shows.
+function shortenPath(p: string): string {
+  const home = homedir();
+  return p.startsWith(home) ? `~${p.slice(home.length)}` : p;
 }
 
 // Data persisted on the transcript entry. TUI-only (not sent to the LLM); the
@@ -144,7 +153,9 @@ export default function (pi: ExtensionAPI) {
       0,
     ));
     if (expanded && data.diff) {
-      box.addChild(new Text(theme.fg("dim", data.diff), 0, 0));
+      // renderDiff is pi's own diff renderer (used by the edit tool): green
+      // additions, red removals, dim context, with intra-line highlighting.
+      box.addChild(new Text(renderDiff(data.diff), 0, 0));
     }
     return box;
   });
@@ -182,15 +193,23 @@ export default function (pi: ExtensionAPI) {
     const bin = resolvedPath;
     if (!bin) return;
 
-    // -d prints the diff to stdout, -w applies it — one call, no race window.
-    let diff: string;
+    // goimports prints the formatted result to stdout without modifying the
+    // file. Send the model a standard unified diff (familiar format); keep the
+    // line-numbered display diff for the transcript entry, which renderDiff
+    // colors.
+    let unified: string;
+    let display: string;
     try {
-      const { stdout } = await execFileP(
+      const before = await readFile(path, "utf8");
+      const { stdout: after } = await execFileP(
         bin,
-        ["-d", "-w", ...extraArgs(), path],
+        [...extraArgs(), path],
         { signal: ctx.signal },
       );
-      diff = stdout.trim();
+      if (after === before) return; // no changes
+      await writeFile(path, after);
+      unified = generateUnifiedPatch(path, before, after);
+      display = generateDiffString(before, after).diff;
     } catch (e: unknown) {
       return {
         content: [
@@ -200,22 +219,19 @@ export default function (pi: ExtensionAPI) {
       };
     }
 
-    if (!diff) return; // no changes
-
-    // Visual cue in the transcript right after the tool call. Guarded on
-    // hasUI so headless/SDK runs don't litter the session with unrendered
-    // entries.
+    // Guarded on hasUI: headless/SDK runs would only litter the session with
+    // unrendered entries.
     if (ctx.hasUI) {
       pi.appendEntry<GoimportsEntryData>("goimports", {
-        summary: summarizeDiff(diff),
-        diff,
+        summary: summarizeDiff(display, shortenPath(path)),
+        diff: display,
       });
     }
 
     return {
       content: [
         ...event.content,
-        { type: "text" as const, text: `goimports applied:\n\n${diff}` },
+        { type: "text" as const, text: `goimports applied:\n\n${unified}` },
       ],
     };
   });

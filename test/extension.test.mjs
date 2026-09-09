@@ -104,6 +104,8 @@ test("goimports extension", async (t) => {
       const res = await handlers.get("tool_result")[0](writeEvent(file), ctx);
       const diff = res?.content?.find((c) => c.text?.startsWith("goimports applied"));
       assert.ok(diff, "diff appended to tool result");
+      // Model-facing diff is a standard unified diff (familiar format).
+      assert.match(diff.text, /--- [^\n]+\n\+\+\+ [^\n]+\n@@ /, "unified diff headers");
       assert.match(diff.text, /import "fmt"/);
       assert.match(
         fs.readFileSync(file, "utf-8"),
@@ -114,10 +116,13 @@ test("goimports extension", async (t) => {
       assert.equal(entries[0].type, "goimports");
       assert.match(
         entries[0].data.summary,
-        /^goimports \+\d+ -\d+$/,
+        /^goimports \S+ \+\d+ -\d+$/,
         "entry summary reflects the diff",
       );
-      assert.equal(entries[0].data.diff, diff.text.slice("goimports applied:\n\n".length));
+      // Entry diff is the line-numbered display format (for renderDiff),
+      // distinct from the unified diff sent to the model.
+      assert.match(entries[0].data.diff, /^\+\d+ /m, "line-numbered display diff");
+      assert.notEqual(entries[0].data.diff, diff.text.slice("goimports applied:\n\n".length));
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
