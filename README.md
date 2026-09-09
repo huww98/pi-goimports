@@ -38,11 +38,11 @@ to (de)activate.
 ```bash
 pi install npm:pi-goimports
 # or pin a version
-pi install npm:pi-goimports@0.1.1
+pi install npm:pi-goimports@0.2.0
 
 # alternative — from git
 pi install git:github.com/huww98/pi-goimports
-pi install git:github.com/huww98/pi-goimports@v0.1.1
+pi install git:github.com/huww98/pi-goimports@v0.2.0
 ```
 
 To try without installing: `pi -e npm:pi-goimports`.
