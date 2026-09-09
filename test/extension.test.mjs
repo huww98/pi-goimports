@@ -15,12 +15,17 @@ async function loadExtension() {
 
 function makeStubPi() {
   const handlers = new Map();
+  const entries = [];
   const pi = {
     on(event, handler) {
       (handlers.get(event) ?? handlers.set(event, []).get(event)).push(handler);
     },
+    registerEntryRenderer(_type, _renderer) {},
+    appendEntry(type, data) {
+      entries.push({ type, data });
+    },
   };
-  return { pi, handlers };
+  return { pi, handlers, entries };
 }
 
 function makeCtx() {
@@ -71,7 +76,7 @@ test("goimports extension", async (t) => {
   }
 
   const mod = await loadExtension();
-  const { pi, handlers } = makeStubPi();
+  const { pi, handlers, entries } = makeStubPi();
   await mod.default(pi);
 
   const savedPath = process.env.PATH;
@@ -94,6 +99,7 @@ test("goimports extension", async (t) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gi-"));
     const file = path.join(dir, "x.go");
     fs.writeFileSync(file, UNFORMATTED);
+    entries.length = 0;
     try {
       const res = await handlers.get("tool_result")[0](writeEvent(file), ctx);
       const diff = res?.content?.find((c) => c.text?.startsWith("goimports applied"));
@@ -104,6 +110,54 @@ test("goimports extension", async (t) => {
         /import "fmt"/,
         "file applied",
       );
+      assert.equal(entries.length, 1, "transcript entry appended");
+      assert.equal(entries[0].type, "goimports");
+      assert.match(
+        entries[0].data.summary,
+        /^goimports \+\d+ -\d+$/,
+        "entry summary reflects the diff",
+      );
+      assert.equal(entries[0].data.diff, diff.text.slice("goimports applied:\n\n".length));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("no diff: no transcript entry", async () => {
+    process.env.PATH = savedPath;
+    const { ctx } = makeCtx();
+    await handlers.get("session_start")[0]({}, ctx);
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gi-"));
+    const file = path.join(dir, "x.go");
+    // Already formatted + imports resolved — goimports is a no-op.
+    const clean = 'package x\n\nimport "fmt"\n\nfunc main() { fmt.Println("hi") }\n';
+    fs.writeFileSync(file, clean);
+    entries.length = 0;
+    try {
+      const res = await handlers.get("tool_result")[0](writeEvent(file), ctx);
+      assert.equal(res, undefined, "no content added when no diff");
+      assert.equal(entries.length, 0, "no entry appended when no diff");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("headless (hasUI=false): no transcript entry", async () => {
+    process.env.PATH = savedPath;
+    const { ctx } = makeCtx();
+    await handlers.get("session_start")[0]({}, ctx);
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gi-"));
+    const file = path.join(dir, "x.go");
+    fs.writeFileSync(file, UNFORMATTED);
+    entries.length = 0;
+    try {
+      await handlers.get("tool_result")[0](
+        writeEvent(file),
+        { ...ctx, hasUI: false },
+      );
+      assert.equal(entries.length, 0, "no entry in headless mode");
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

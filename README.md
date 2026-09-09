@@ -17,7 +17,11 @@ goimports manage resolvable imports.
   not processed automatically.
 - **`tool_result`** for `write`/`edit` on `*.go` — runs `goimports -d -w`
   (prints the diff to stdout and applies it in one call) and appends the diff
-  to the tool result. No-op when goimports changes nothing.
+  to the tool result. No-op when goimports changes nothing. When it does make
+  changes, a compact colored marker (`◆ goimports +N -M`) is appended to the
+  chat transcript right after the tool call via a custom entry renderer, so
+  the cue persists in scrollback (expand the entry to see the full diff). The
+  entry is TUI-only and is not sent to the LLM; the diff text already is.
 
 ## Binary lookup (cached per session)
 

@@ -28,6 +28,7 @@ import {
   isWriteToolResult,
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
+import { Box, Text } from "@earendil-works/pi-tui";
 
 const execFileP = promisify(execFile);
 
@@ -64,6 +65,29 @@ function extraArgs(): string[] {
 function errMsg(e: unknown): string {
   const err = e as { stderr?: string; message?: string };
   return (err.stderr ?? "").trim() || err.message || String(e);
+}
+
+// One-line summary of a unified diff: counts added/removed lines (excluding
+// file headers and hunk markers). goimports -d output is a single-file unified
+// diff, so this reflects net changes to that file.
+function summarizeDiff(diff: string): string {
+  let added = 0;
+  let removed = 0;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@")) {
+      continue;
+    }
+    if (line.startsWith("+")) added++;
+    else if (line.startsWith("-")) removed++;
+  }
+  return `goimports +${added} -${removed}`;
+}
+
+// Data persisted on the transcript entry. TUI-only (not sent to the LLM); the
+// diff text is already injected into the tool result for the model.
+interface GoimportsEntryData {
+  summary: string;
+  diff: string;
 }
 
 // Probe that `bin` actually runs (not just present+executable). Feeds
@@ -107,6 +131,23 @@ async function resolveGoimportsPath(): Promise<string | null> {
 }
 
 export default function (pi: ExtensionAPI) {
+  // Transcript entry rendered right after the tool call: a compact colored
+  // marker so goimports changes are visible at a glance in scrollback. The
+  // full diff is revealed when the entry is expanded. TUI-only — custom entries
+  // do not participate in LLM context.
+  pi.registerEntryRenderer<GoimportsEntryData>("goimports", (entry, { expanded }, theme) => {
+    const data = entry.data ?? { summary: "goimports", diff: "" };
+    const box = new Box(0, 0);
+    box.addChild(new Text(
+      `${theme.fg("accent", "◆")} ${theme.fg("dim", data.summary)}`,
+      0,
+      0,
+    ));
+    if (expanded && data.diff) {
+      box.addChild(new Text(theme.fg("dim", data.diff), 0, 0));
+    }
+    return box;
+  });
   // Resolve once per session. Stable for the whole session so the system-prompt
   // rule doesn't flip mid-session; install goimports and /reload to activate.
   // probe/go-env errors propagate here and surface in the notify.
@@ -160,6 +201,16 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (!diff) return; // no changes
+
+    // Visual cue in the transcript right after the tool call. Guarded on
+    // hasUI so headless/SDK runs don't litter the session with unrendered
+    // entries.
+    if (ctx.hasUI) {
+      pi.appendEntry<GoimportsEntryData>("goimports", {
+        summary: summarizeDiff(diff),
+        diff,
+      });
+    }
 
     return {
       content: [
