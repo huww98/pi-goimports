@@ -37,11 +37,11 @@ system-prompt rule doesn't flip mid-run.
 ```bash
 pi install npm:pi-goimports
 # or pin a version
-pi install npm:pi-goimports@0.2.0
+pi install npm:pi-goimports@0.2.1
 
 # alternative — from git
 pi install git:github.com/huww98/pi-goimports
-pi install git:github.com/huww98/pi-goimports@v0.2.0
+pi install git:github.com/huww98/pi-goimports@v0.2.1
 ```
 
 To try without installing: `pi -e npm:pi-goimports`.
